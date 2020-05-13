@@ -1,5 +1,6 @@
 package com.example.filechange
 
+import android.content.Intent
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.os.Environment
@@ -24,9 +25,11 @@ class MainActivity : AppCompatActivity() {
 
         val random = Random(10)
         findViewById<Button>(R.id.create).setOnClickListener {
-            val filePath = file.absolutePath + File.separator + random.nextInt() + ".txt"
-            val newFile = File(filePath)
-            newFile.createNewFile()
+//            val filePath = file.absolutePath + File.separator + random.nextInt() + ".txt"
+//            val newFile = File(filePath)
+//            newFile.createNewFile()
+
+            startActivity(Intent(this, XActivity::class.java))
         }
     }
 
