@@ -100,7 +100,7 @@ class ScreenShotListenManager private constructor(context: Context?) {
         try { // 数据改变时查询数据库中最后加入的一条数据
             cursor = mContext.contentResolver.query(
                 contentUri,
-                if (Build.VERSION.SDK_INT < 16) MEDIA_PROJECTIONS else MEDIA_PROJECTIONS_API_16,
+                MEDIA_PROJECTIONS_API_16,
                 null,
                 null,
                 MediaStore.Images.ImageColumns.DATE_ADDED + " desc limit 1"
@@ -124,7 +124,7 @@ class ScreenShotListenManager private constructor(context: Context?) {
                 heightIndex = cursor.getColumnIndex(MediaStore.Images.ImageColumns.HEIGHT)
             }
             // 获取行数据
-            val data = cursor.getString(dataIndex)
+            val filePath = cursor.getString(dataIndex)
             val dateTaken = cursor.getLong(dateTakenIndex)
             var width = 0
             var height = 0
@@ -132,14 +132,15 @@ class ScreenShotListenManager private constructor(context: Context?) {
                 width = cursor.getInt(widthIndex)
                 height = cursor.getInt(heightIndex)
             } else { // API 16 之前, 宽高要手动获取
-                val size = getImageSize(data)
+                val size = getImageSize(filePath)
                 width = size.x
                 height = size.y
             }
             // 处理获取到的第一行数据
-            handleMediaRowData(data, dateTaken, width, height)
+            handleMediaRowData(filePath, dateTaken, width, height)
         } catch (e: Exception) {
-            e.printStackTrace()
+//            e.printStackTrace()
+            Log.e(TAG, "handleMediaContentChange. catch: ${e.message}")
         } finally {
             if (cursor != null && !cursor.isClosed) {
                 cursor.close()
@@ -158,24 +159,24 @@ class ScreenShotListenManager private constructor(context: Context?) {
      * 处理获取到的一行数据
      */
     private fun handleMediaRowData(
-        data: String,
+        filePath: String,
         dateTaken: Long,
         width: Int,
         height: Int
     ) {
-        if (checkScreenShot(data, dateTaken, width, height)) {
+        if (checkScreenShot(filePath, dateTaken, width, height)) {
             Log.d(
                 TAG,
-                "ScreenShot: path = " + data + "; size = " + width + " * " + height
+                "ScreenShot: path = " + filePath + "; size = " + width + " * " + height
                         + "; date = " + dateTaken
             )
-            if (mListener != null && !checkCallback(data)) {
-                mListener!!.onShot(data)
+            if (mListener != null && !checkCallback(filePath)) {
+                mListener!!.onShot(filePath)
             }
         } else { // 如果在观察区间媒体数据库有数据改变，又不符合截屏规则，则输出到 log 待分析
-            Log.w(
+            Log.e(
                 TAG,
-                "Media content changed, but not screenshot: path = " + data
+                "Media content changed, but not screenshot: path = " + filePath
                         + "; size = " + width + " * " + height + "; date = " + dateTaken
             )
         }
@@ -194,6 +195,8 @@ class ScreenShotListenManager private constructor(context: Context?) {
          */
 // 如果加入数据库的时间在开始监听之前, 或者与当前时间相差大于10秒, 则认为当前没有截屏
         var data = data
+        Log.d(TAG, "checkScreenShot. dateTaken: $dateTaken")
+        Log.d(TAG, "checkScreenShot. mStartListenTime: $mStartListenTime")
         if (dateTaken < mStartListenTime || System.currentTimeMillis() - dateTaken > 10 * 1000) {
             return false
         }
