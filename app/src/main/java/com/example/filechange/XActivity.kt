@@ -5,6 +5,7 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
@@ -59,6 +60,7 @@ class XActivity: Activity() {
 
                 override fun onShot(imagePath: String?) {
                     mBinding.tips.text = imagePath.toString()
+                    Toast.makeText(this@XActivity, "catch screen shot!", Toast.LENGTH_LONG).show()
                 }
             })
             screenShotListenManager.startListen()
