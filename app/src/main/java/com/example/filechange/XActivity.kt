@@ -5,20 +5,22 @@ import android.app.Activity
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
 import androidx.annotation.RequiresApi
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.example.filechange.databinding.ActivityXBinding
 
 class XActivity: Activity() {
 
     private lateinit var screenShotListenManager: ScreenShotListenManager
     private var isHasScreenShotListener = false
+    private lateinit var mBinding: ActivityXBinding
 
     @RequiresApi(Build.VERSION_CODES.M)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_x)
+        mBinding = ActivityXBinding.inflate(layoutInflater)
+        setContentView(mBinding.root)
         screenShotListenManager = ScreenShotListenManager.newInstance(this)
 
         check()
@@ -56,7 +58,7 @@ class XActivity: Activity() {
             screenShotListenManager.setListener(object : ScreenShotListenManager.OnScreenShotListener {
 
                 override fun onShot(imagePath: String?) {
-                    Log.i("XActivity", "->获得截图路径：$imagePath")
+                    mBinding.tips.text = imagePath.toString()
                 }
             })
             screenShotListenManager.startListen()

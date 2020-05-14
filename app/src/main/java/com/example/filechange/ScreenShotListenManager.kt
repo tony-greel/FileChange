@@ -100,13 +100,13 @@ class ScreenShotListenManager private constructor(context: Context?) {
         try { // 数据改变时查询数据库中最后加入的一条数据
             cursor = mContext.contentResolver.query(
                 contentUri,
-                MEDIA_PROJECTIONS_API_16,
+                PROJECTION,
                 null,
                 null,
-                MediaStore.Images.ImageColumns.DATE_ADDED + " desc limit 1"
+                MediaStore.Images.Media.DATE_ADDED + " DESC"
             )
             if (cursor == null) {
-                Log.e(TAG, "Deviant logic.")
+                Log.e(TAG, "cursor == null.")
                 return
             }
             if (!cursor.moveToFirst()) {
@@ -114,18 +114,18 @@ class ScreenShotListenManager private constructor(context: Context?) {
                 return
             }
             // 获取各列的索引
-            val dataIndex = cursor.getColumnIndex(MediaStore.Images.ImageColumns.DATA)
-            val dateTakenIndex =
-                cursor.getColumnIndex(MediaStore.Images.ImageColumns.DATE_TAKEN)
+            val dataIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
+            val dateAddedIndex =
+                cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
             var widthIndex = -1
             var heightIndex = -1
             if (Build.VERSION.SDK_INT >= 16) {
-                widthIndex = cursor.getColumnIndex(MediaStore.Images.ImageColumns.WIDTH)
-                heightIndex = cursor.getColumnIndex(MediaStore.Images.ImageColumns.HEIGHT)
+                widthIndex = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                heightIndex = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
             }
             // 获取行数据
             val filePath = cursor.getString(dataIndex)
-            val dateTaken = cursor.getLong(dateTakenIndex)
+            val dateAdded = cursor.getLong(dateAddedIndex) * 1000
             var width = 0
             var height = 0
             if (widthIndex >= 0 && heightIndex >= 0) {
@@ -137,7 +137,7 @@ class ScreenShotListenManager private constructor(context: Context?) {
                 height = size.y
             }
             // 处理获取到的第一行数据
-            handleMediaRowData(filePath, dateTaken, width, height)
+            handleMediaRowData(filePath, dateAdded, width, height)
         } catch (e: Exception) {
 //            e.printStackTrace()
             Log.e(TAG, "handleMediaContentChange. catch: ${e.message}")
@@ -160,15 +160,15 @@ class ScreenShotListenManager private constructor(context: Context?) {
      */
     private fun handleMediaRowData(
         filePath: String,
-        dateTaken: Long,
+        dateAdded: Long,
         width: Int,
         height: Int
     ) {
-        if (checkScreenShot(filePath, dateTaken, width, height)) {
+        if (checkScreenShot(filePath, dateAdded, width, height)) {
             Log.d(
                 TAG,
                 "ScreenShot: path = " + filePath + "; size = " + width + " * " + height
-                        + "; date = " + dateTaken
+                        + "; date = " + dateAdded
             )
             if (mListener != null && !checkCallback(filePath)) {
                 mListener!!.onShot(filePath)
@@ -177,7 +177,7 @@ class ScreenShotListenManager private constructor(context: Context?) {
             Log.e(
                 TAG,
                 "Media content changed, but not screenshot: path = " + filePath
-                        + "; size = " + width + " * " + height + "; date = " + dateTaken
+                        + "; size = " + width + " * " + height + "; date = " + dateAdded
             )
         }
     }
@@ -186,18 +186,17 @@ class ScreenShotListenManager private constructor(context: Context?) {
      * 判断指定的数据行是否符合截屏条件
      */
     private fun checkScreenShot(
-        data: String,
-        dateTaken: Long,
+        filePath: String,
+        dateAdded: Long,
         width: Int,
         height: Int
     ): Boolean { /*
          * 判断依据一: 时间判断
          */
 // 如果加入数据库的时间在开始监听之前, 或者与当前时间相差大于10秒, 则认为当前没有截屏
-        var data = data
-        Log.d(TAG, "checkScreenShot. dateTaken: $dateTaken")
+        Log.d(TAG, "checkScreenShot. dateAdded: $dateAdded")
         Log.d(TAG, "checkScreenShot. mStartListenTime: $mStartListenTime")
-        if (dateTaken < mStartListenTime || System.currentTimeMillis() - dateTaken > 10 * 1000) {
+        if (dateAdded < mStartListenTime || System.currentTimeMillis() - dateAdded > 10 * 1000) {
             return false
         }
         /*
@@ -211,13 +210,12 @@ class ScreenShotListenManager private constructor(context: Context?) {
         }
         /*
          * 判断依据三: 路径判断
-         */if (TextUtils.isEmpty(data)) {
+         */if (TextUtils.isEmpty(filePath)) {
             return false
         }
-        data = data.toLowerCase()
         // 判断图片路径是否含有指定的关键字之一, 如果有, 则认为当前截屏了
         for (keyWork in KEYWORDS) {
-            if (data.contains(keyWork)) {
+            if (filePath.toLowerCase(Locale.getDefault()).contains(keyWork)) {
                 return true
             }
         }
@@ -321,8 +319,8 @@ class ScreenShotListenManager private constructor(context: Context?) {
         handler: Handler?
     ) : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) {
-            super.onChange(selfChange)
             handleMediaContentChange(mContentUri)
+            super.onChange(selfChange)
         }
 
     }
@@ -339,11 +337,11 @@ class ScreenShotListenManager private constructor(context: Context?) {
         /**
          * 读取媒体数据库时需要读取的列, 其中 WIDTH 和 HEIGHT 字段在 API 16 以后才有
          */
-        private val MEDIA_PROJECTIONS_API_16 = arrayOf(
-            MediaStore.Images.ImageColumns.DATA,
-            MediaStore.Images.ImageColumns.DATE_TAKEN,
-            MediaStore.Images.ImageColumns.WIDTH,
-            MediaStore.Images.ImageColumns.HEIGHT
+        private val PROJECTION = arrayOf(
+            MediaStore.Images.Media.DATA,
+            MediaStore.Images.Media.DATE_ADDED,
+            MediaStore.Images.Media.WIDTH,
+            MediaStore.Images.Media.HEIGHT
         )
         /**
          * 截屏依据中的路径判断关键字
