@@ -16,40 +16,21 @@ import android.view.Display
 import android.view.WindowManager
 import java.util.*
 
-/**
- * Created by <lzh> on 2017/8/2.
-</lzh> */
-class ScreenShotListenManager private constructor(context: Context?) {
+class ScreenCaptureManager private constructor(context: Context?) {
     private val mContext: Context
-    private var mListener: OnScreenShotListener? = null
-    private var mStartListenTime: Long = 0
-    /**
-     * 内部存储器内容观察者
-     */
+    private var mListener: CaptureListener? = null
+    private var mStartCaptureTime: Long = 0
     private var mInternalObserver: MediaContentObserver? = null
-    /**
-     * 外部存储器内容观察者
-     */
     private var mExternalObserver: MediaContentObserver? = null
-    /**
-     * 运行在 UI 线程的 Handler, 用于运行监听器回调
-     */
-    private val mUiHandler = Handler(Looper.getMainLooper())
+    private val mHandler = Handler(Looper.getMainLooper())
 
-    /**
-     * 启动监听
-     */
-    fun startListen() {
+    fun start() {
         assertInMainThread()
-        //        sHasCallbackPaths.clear();
-// 记录开始监听的时间戳
-        mStartListenTime = System.currentTimeMillis()
-        // 创建内容观察者
+        mStartCaptureTime = System.currentTimeMillis()
         mInternalObserver =
-            MediaContentObserver(MediaStore.Images.Media.INTERNAL_CONTENT_URI, mUiHandler)
+            MediaContentObserver(MediaStore.Images.Media.INTERNAL_CONTENT_URI, mHandler)
         mExternalObserver =
-            MediaContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, mUiHandler)
-        // 注册内容观察者
+            MediaContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, mHandler)
         mContext.contentResolver.registerContentObserver(
             MediaStore.Images.Media.INTERNAL_CONTENT_URI,
             false,
@@ -62,12 +43,8 @@ class ScreenShotListenManager private constructor(context: Context?) {
         )
     }
 
-    /**
-     * 停止监听
-     */
-    fun stopListen() {
+    fun stop() {
         assertInMainThread()
-        // 注销内容观察者
         if (mInternalObserver != null) {
             try {
                 mContext.contentResolver.unregisterContentObserver(mInternalObserver!!)
@@ -84,20 +61,14 @@ class ScreenShotListenManager private constructor(context: Context?) {
             }
             mExternalObserver = null
         }
-        // 清空数据
-        mStartListenTime = 0
-        //        sHasCallbackPaths.clear();
-//切记！！！:必须设置为空 可能mListener 会隐式持有Activity导致释放不掉
+        mStartCaptureTime = 0
         mListener = null
     }
 
-    /**
-     * 处理媒体数据库的内容改变
-     */
-    private fun handleMediaContentChange(contentUri: Uri) {
-        Log.d(TAG, "handleMediaContentChange. contentUri: $contentUri")
+    private fun executeChange(contentUri: Uri) {
+        Log.d(TAG, "executeChange. contentUri: $contentUri")
         var cursor: Cursor? = null
-        try { // 数据改变时查询数据库中最后加入的一条数据
+        try {
             cursor = mContext.contentResolver.query(
                 contentUri,
                 PROJECTION,
@@ -105,42 +76,32 @@ class ScreenShotListenManager private constructor(context: Context?) {
                 null,
                 MediaStore.Images.Media.DATE_ADDED + " DESC"
             )
-            if (cursor == null) {
-                Log.e(TAG, "cursor == null.")
-                return
+            if (cursor != null && cursor.moveToFirst()) {
+                val dataIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
+                val dateAddedIndex =
+                    cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
+                var widthIndex = -1
+                var heightIndex = -1
+                if (Build.VERSION.SDK_INT >= 16) {
+                    widthIndex = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
+                    heightIndex = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
+                }
+                val filePath = cursor.getString(dataIndex)
+                val dateAdded = cursor.getLong(dateAddedIndex) * 1000
+                val width: Int
+                val height: Int
+                if (widthIndex >= 0 && heightIndex >= 0) {
+                    width = cursor.getInt(widthIndex)
+                    height = cursor.getInt(heightIndex)
+                } else {
+                    val size = getImageSize(filePath)
+                    width = size.x
+                    height = size.y
+                }
+                parseFile(filePath, dateAdded, width, height)
             }
-            if (!cursor.moveToFirst()) {
-                Log.d(TAG, "Cursor no data.")
-                return
-            }
-            // 获取各列的索引
-            val dataIndex = cursor.getColumnIndex(MediaStore.Images.Media.DATA)
-            val dateAddedIndex =
-                cursor.getColumnIndex(MediaStore.Images.Media.DATE_ADDED)
-            var widthIndex = -1
-            var heightIndex = -1
-            if (Build.VERSION.SDK_INT >= 16) {
-                widthIndex = cursor.getColumnIndex(MediaStore.Images.Media.WIDTH)
-                heightIndex = cursor.getColumnIndex(MediaStore.Images.Media.HEIGHT)
-            }
-            // 获取行数据
-            val filePath = cursor.getString(dataIndex)
-            val dateAdded = cursor.getLong(dateAddedIndex) * 1000
-            var width = 0
-            var height = 0
-            if (widthIndex >= 0 && heightIndex >= 0) {
-                width = cursor.getInt(widthIndex)
-                height = cursor.getInt(heightIndex)
-            } else { // API 16 之前, 宽高要手动获取
-                val size = getImageSize(filePath)
-                width = size.x
-                height = size.y
-            }
-            // 处理获取到的第一行数据
-            handleMediaRowData(filePath, dateAdded, width, height)
         } catch (e: Exception) {
-//            e.printStackTrace()
-            Log.e(TAG, "handleMediaContentChange. catch: ${e.message}")
+            Log.e(TAG, "executeChange. catch: ${e.message}")
         } finally {
             if (cursor != null && !cursor.isClosed) {
                 cursor.close()
@@ -155,37 +116,30 @@ class ScreenShotListenManager private constructor(context: Context?) {
         return Point(options.outWidth, options.outHeight)
     }
 
-    /**
-     * 处理获取到的一行数据
-     */
-    private fun handleMediaRowData(
+    private fun parseFile(
         filePath: String,
         dateAdded: Long,
         width: Int,
         height: Int
     ) {
-        if (checkScreenShot(filePath, dateAdded, width, height)) {
+        if (check(filePath, dateAdded, width, height)) {
             Log.d(
                 TAG,
-                "ScreenShot: path = " + filePath + "; size = " + width + " * " + height
+                "parseFile: path = " + filePath + "; size = " + width + " * " + height
                         + "; date = " + dateAdded
             )
             if (mListener != null && !checkCallback(filePath)) {
-                mListener!!.onShot(filePath)
+                mListener!!.onCapture(filePath)
             }
-        } else { // 如果在观察区间媒体数据库有数据改变，又不符合截屏规则，则输出到 log 待分析
-            Log.e(
-                TAG,
-                "Media content changed, but not screenshot: path = " + filePath
-                        + "; size = " + width + " * " + height + "; date = " + dateAdded
-            )
+        } else {
+            Log.e(TAG, "parseFile, it is not screen capture: path = $filePath")
         }
     }
 
     /**
      * 判断指定的数据行是否符合截屏条件
      */
-    private fun checkScreenShot(
+    private fun check(
         filePath: String,
         dateAdded: Long,
         width: Int,
@@ -195,15 +149,15 @@ class ScreenShotListenManager private constructor(context: Context?) {
          */
 // 如果加入数据库的时间在开始监听之前, 或者与当前时间相差大于10秒, 则认为当前没有截屏
         Log.d(TAG, "checkScreenShot. dateAdded: $dateAdded")
-        Log.d(TAG, "checkScreenShot. mStartListenTime: $mStartListenTime")
-        if (dateAdded < mStartListenTime || System.currentTimeMillis() - dateAdded > 10 * 1000) {
+        Log.d(TAG, "checkScreenShot. mStartListenTime: $mStartCaptureTime")
+        if (dateAdded < mStartCaptureTime || System.currentTimeMillis() - dateAdded > 10 * 1000) {
             return false
         }
         /*
          * 判断依据二: 尺寸判断
          */if (sScreenRealSize != null) { // 如果图片尺寸超出屏幕, 则认为当前没有截屏
-            if (!(width <= sScreenRealSize?.x?:0 && height <= sScreenRealSize?.y?:0
-                        || height <= sScreenRealSize?.x?:0 && width <= sScreenRealSize?.y?:0)
+            if (!(width <= sScreenRealSize?.x ?: 0 && height <= sScreenRealSize?.y ?: 0
+                        || height <= sScreenRealSize?.x ?: 0 && width <= sScreenRealSize?.y ?: 0)
             ) {
                 return false
             }
@@ -276,39 +230,15 @@ class ScreenShotListenManager private constructor(context: Context?) {
             return screenSize!!
         }
 
-    //    public Bitmap createScreenShotBitmap(Context context, String screenFilePath) {
-//        View v = LayoutInflater.from(context).inflate(R.layout.share_screenshot_layout, null);
-//        ImageView iv = (ImageView) v.findViewById(R.id.iv);
-//        Bitmap bitmap = BitmapFactory.decodeFile(screenFilePath);
-//        iv.setImageBitmap(bitmap);
-//整体布局
-//        Point point = getRealScreenSize();
-//        v.measure(View.MeasureSpec.makeMeasureSpec(point.x, View.MeasureSpec.EXACTLY),
-//                View.MeasureSpec.makeMeasureSpec(point.y, View.MeasureSpec.EXACTLY));
-//
-//        v.layout(0, 0, point.x, point.y);
-//        Bitmap result = Bitmap.createBitmap(v.getWidth(), v.getHeight(), Bitmap.Config.RGB_565);
-//        Bitmap result = Bitmap.createBitmap(v.getWidth(), v.getHeight() + dp2px(context, 140), Bitmap.Config.ARGB_8888);
-//        Canvas c = new Canvas(result);
-//        c.drawColor(Color.WHITE);
-// Draw view to canvas
-//        v.draw(c);
-//        return result;
-//    }
-    private fun dp2px(ctx: Context, dp: Float): Int {
-        val scale = ctx.resources.displayMetrics.density
-        return (dp * scale + 0.5f).toInt()
-    }
-
     /**
      * 设置截屏监听器
      */
-    fun setListener(listener: OnScreenShotListener?) {
+    fun setListener(listener: CaptureListener?) {
         mListener = listener
     }
 
-    interface OnScreenShotListener {
-        fun onShot(imagePath: String?)
+    interface CaptureListener {
+        fun onCapture(imagePath: String?)
     }
 
     /**
@@ -319,21 +249,14 @@ class ScreenShotListenManager private constructor(context: Context?) {
         handler: Handler?
     ) : ContentObserver(handler) {
         override fun onChange(selfChange: Boolean) {
-            handleMediaContentChange(mContentUri)
+            executeChange(mContentUri)
             super.onChange(selfChange)
         }
 
     }
 
     companion object {
-        private const val TAG = "ScreenShotListenManager"
-        /**
-         * 读取媒体数据库时需要读取的列
-         */
-        private val MEDIA_PROJECTIONS = arrayOf(
-            MediaStore.Images.ImageColumns.DATA,
-            MediaStore.Images.ImageColumns.DATE_TAKEN
-        )
+        private const val TAG = "ScreenCaptureManager"
         /**
          * 读取媒体数据库时需要读取的列, 其中 WIDTH 和 HEIGHT 字段在 API 16 以后才有
          */
@@ -358,9 +281,9 @@ class ScreenShotListenManager private constructor(context: Context?) {
         private val sHasCallbackPaths: MutableList<String> =
             ArrayList()
 
-        fun newInstance(context: Context?): ScreenShotListenManager {
+        fun newInstance(context: Context?): ScreenCaptureManager {
             assertInMainThread()
-            return ScreenShotListenManager(context)
+            return ScreenCaptureManager(context)
         }
 
         private fun assertInMainThread() {
@@ -368,7 +291,7 @@ class ScreenShotListenManager private constructor(context: Context?) {
                 val elements =
                     Thread.currentThread().stackTrace
                 var methodMsg: String? = null
-                if (elements != null && elements.size >= 4) {
+                if (elements.size >= 4) {
                     methodMsg = elements[3].toString()
                 }
                 throw IllegalStateException("Call the method must be in main thread: $methodMsg")

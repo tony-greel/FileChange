@@ -11,10 +11,10 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.example.filechange.databinding.ActivityXBinding
 
-class XActivity: Activity() {
+class XActivity : Activity() {
 
-    private lateinit var screenShotListenManager: ScreenShotListenManager
-    private var isHasScreenShotListener = false
+    private lateinit var screenCaptureManager: ScreenCaptureManager
+    private var hasSet = false
     private lateinit var mBinding: ActivityXBinding
 
     @RequiresApi(Build.VERSION_CODES.M)
@@ -22,17 +22,19 @@ class XActivity: Activity() {
         super.onCreate(savedInstanceState)
         mBinding = ActivityXBinding.inflate(layoutInflater)
         setContentView(mBinding.root)
-        screenShotListenManager = ScreenShotListenManager.newInstance(this)
+        screenCaptureManager = ScreenCaptureManager.newInstance(this)
 
-        check()
+        checkPermission()
     }
 
-    private fun check() {
+    private fun checkPermission() {
         val checkSelfPermission =
             ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE)
         if (checkSelfPermission != PackageManager.PERMISSION_GRANTED) {
-            ActivityCompat.requestPermissions(this,
-                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), 99)
+            ActivityCompat.requestPermissions(
+                this,
+                arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE), 99
+            )
         }
     }
 
@@ -42,7 +44,7 @@ class XActivity: Activity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode ==99) {
+        if (requestCode == 99) {
             if (grantResults[0] != PackageManager.PERMISSION_GRANTED) {
                 finish()
             }
@@ -51,32 +53,32 @@ class XActivity: Activity() {
 
     override fun onResume() {
         super.onResume()
-        startScreenShotListen()
+        start()
     }
 
-    private fun startScreenShotListen() {
-        if (!isHasScreenShotListener) {
-            screenShotListenManager.setListener(object : ScreenShotListenManager.OnScreenShotListener {
+    private fun start() {
+        if (!hasSet) {
+            screenCaptureManager.setListener(object : ScreenCaptureManager.CaptureListener {
 
-                override fun onShot(imagePath: String?) {
+                override fun onCapture(imagePath: String?) {
                     mBinding.tips.text = imagePath.toString()
                     Toast.makeText(this@XActivity, "catch screen shot!", Toast.LENGTH_LONG).show()
                 }
             })
-            screenShotListenManager.startListen()
-            isHasScreenShotListener = true
+            screenCaptureManager.start()
+            hasSet = true
         }
     }
 
     override fun onPause() {
         super.onPause()
-        stopScreenShotListen()
+        stop()
     }
 
-    private fun stopScreenShotListen() {
-        if (isHasScreenShotListener) {
-            screenShotListenManager.stopListen()
-            isHasScreenShotListener = false
+    private fun stop() {
+        if (hasSet) {
+            screenCaptureManager.stop()
+            hasSet = false
         }
     }
 }
