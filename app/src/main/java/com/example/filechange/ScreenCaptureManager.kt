@@ -148,9 +148,12 @@ class ScreenCaptureManager private constructor(context: Context?) {
          * 判断依据一: 时间判断
          */
 // 如果加入数据库的时间在开始监听之前, 或者与当前时间相差大于10秒, 则认为当前没有截屏
-        Log.d(TAG, "checkScreenShot. dateAdded: $dateAdded")
-        Log.d(TAG, "checkScreenShot. mStartListenTime: $mStartCaptureTime")
-        if (dateAdded < mStartCaptureTime || System.currentTimeMillis() - dateAdded > 10 * 1000) {
+        Log.d(TAG, "check. dateAdded: $dateAdded")
+        Log.d(TAG, "check. mStartCaptureTime: $mStartCaptureTime")
+        val currentTimeMillis = System.currentTimeMillis()
+        Log.d(TAG, "check. currentTimeMillis: $currentTimeMillis")
+        if (dateAdded < mStartCaptureTime || currentTimeMillis - dateAdded > 10 * 1000) {
+            Log.e(TAG, "check false: time")
             return false
         }
         /*
@@ -159,12 +162,14 @@ class ScreenCaptureManager private constructor(context: Context?) {
             if (!(width <= sScreenRealSize?.x ?: 0 && height <= sScreenRealSize?.y ?: 0
                         || height <= sScreenRealSize?.x ?: 0 && width <= sScreenRealSize?.y ?: 0)
             ) {
+                Log.e(TAG, "check false: size")
                 return false
             }
         }
         /*
          * 判断依据三: 路径判断
          */if (TextUtils.isEmpty(filePath)) {
+            Log.e(TAG, "check false: empty")
             return false
         }
         // 判断图片路径是否含有指定的关键字之一, 如果有, 则认为当前截屏了
@@ -272,7 +277,7 @@ class ScreenCaptureManager private constructor(context: Context?) {
         private val KEYWORDS = arrayOf(
             "screenshot", "screen_shot", "screen-shot", "screen shot",
             "screencapture", "screen_capture", "screen-capture", "screen capture",
-            "screencap", "screen_cap", "screen-cap", "screen cap"
+            "screencap", "screen_cap", "screen-cap", "screen cap", "截屏"
         )
         private var sScreenRealSize: Point? = null
         /**
